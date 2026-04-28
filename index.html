@@ -1,61 +1,78 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Visionneuse 3D</title>
-    <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <meta charset="utf-8">
+    <title>3D Fix - Alpha Sorting</title>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; }
-        canvas { width: 100%; height: 100%; touch-action: none; outline: none; }
+        body { margin: 0; background: #111; overflow: hidden; }
+        canvas { width: 100vw; height: 100vh; display: block; }
     </style>
 </head>
 <body>
-    <canvas id="renderCanvas"></canvas>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 
-    <script>
-        const canvas = document.getElementById("renderCanvas");
-        const engine = new BABYLON.Engine(canvas, true);
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        const createScene = function () {
-            const scene = new BABYLON.Scene(engine);
-            scene.clearColor = new BABYLON.Color4(0.05, 0.05, 0.05, 1);
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        // Important pour les couleurs émissives
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        document.body.appendChild(renderer.domElement);
 
-            // Caméra avec contrôles fluides
-            const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 5, BABYLON.Vector3.Zero(), scene);
-            camera.attachControl(canvas, true);
-            camera.wheelPrecision = 50;
+        const controls = new OrbitControls(camera, renderer.domElement);
+        const light = new THREE.AmbientLight(0xffffff, 2); 
+        scene.add(light);
 
-            // Lumière d'ambiance pour les matériaux
-            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
-            light.intensity = 0.7;
-
-            // Chargement du modèle
-            BABYLON.SceneLoader.Append("", "model.glb", scene, function (scene) {
-                scene.createDefaultCameraOrLight(true, true, true);
-                scene.activeCamera.alpha += Math.PI; // Pivoter pour être face au modèle
-                
-                // OPTIMISATION ALPHA : Force le tri des faces transparentes
-                scene.meshes.forEach(mesh => {
-                    if (mesh.material) {
-                        mesh.material.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
-                        mesh.material.separateCullingPass = true; // Évite les bugs de superposition
-                        mesh.material.backFaceCulling = false;    // Permet de voir l'intérieur des cônes
-                    }
-                });
+        const loader = new GLTFLoader();
+        loader.load('model.glb', (gltf) => {
+            const model = gltf.scene;
+            
+            model.traverse((node) => {
+                if (node.isMesh) {
+                    // C'EST ICI QUE LA MAGIE OPÈRE :
+                    node.material.transparent = true;
+                    node.material.depthWrite = true; // Force l'écriture dans le tampon de profondeur
+                    node.material.alphaTest = 0.05;  // Ignore les pixels presque invisibles
+                    node.material.side = THREE.DoubleSide; // Affiche intérieur et extérieur
+                    
+                    // On ajuste le rendu pour éviter que les cônes se mangent entre eux
+                    node.renderOrder = node.id; 
+                }
             });
 
-            return scene;
-        };
-
-        const scene = createScene();
-
-        engine.runRenderLoop(function () {
-            scene.render();
+            scene.add(model);
+            
+            // Centrer la caméra
+            const box = new THREE.Box3().setFromObject(model);
+            const center = box.getCenter(new THREE.Vector3());
+            camera.position.set(center.x, center.y, center.z + 5);
+            controls.target.copy(center);
         });
 
-        window.addEventListener("resize", function () {
-            engine.resize();
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
         });
     </script>
 </body>
