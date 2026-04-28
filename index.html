@@ -1,29 +1,62 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mon Visionneur 3D</title>
-    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+    <title>Visionneuse 3D Haute Précision</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f5f5f5; }
-        model-viewer { width: 100%; height: 100%; --poster-color: transparent; }
-        .ui { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 50px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); font-family: sans-serif; pointer-events: none; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; }
+        canvas { width: 100%; height: 100%; touch-action: none; outline: none; }
     </style>
 </head>
 <body>
+    <canvas id="renderCanvas"></canvas>
 
-    <model-viewer 
-        src="model.glb" 
-        alt="Modèle 3D" 
-        auto-rotate 
-        camera-controls 
-        shadow-intensity="1" 
-        environment-image="neutral" 
-        exposure="1"
-        touch-action="pan-y">
-        <div class="ui">Faites glisser pour pivoter</div>
-    </model-viewer>
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
 
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.05, 0.05, 0.05, 1);
+
+            // Caméra avec contrôles fluides
+            const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 5, BABYLON.Vector3.Zero(), scene);
+            camera.attachControl(canvas, true);
+            camera.wheelPrecision = 50;
+
+            // Lumière d'ambiance pour les matériaux
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.7;
+
+            // Chargement du modèle
+            BABYLON.SceneLoader.Append("", "model.glb", scene, function (scene) {
+                scene.createDefaultCameraOrLight(true, true, true);
+                scene.activeCamera.alpha += Math.PI; // Pivoter pour être face au modèle
+                
+                // OPTIMISATION ALPHA : Force le tri des faces transparentes
+                scene.meshes.forEach(mesh => {
+                    if (mesh.material) {
+                        mesh.material.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+                        mesh.material.separateCullingPass = true; // Évite les bugs de superposition
+                        mesh.material.backFaceCulling = false;    // Permet de voir l'intérieur des cônes
+                    }
+                });
+            });
+
+            return scene;
+        };
+
+        const scene = createScene();
+
+        engine.runRenderLoop(function () {
+            scene.render();
+        });
+
+        window.addEventListener("resize", function () {
+            engine.resize();
+        });
+    </script>
 </body>
 </html>
