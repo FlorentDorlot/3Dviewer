@@ -12,23 +12,16 @@
             position: fixed; top: 16px; left: 16px; z-index: 10;
             display: flex; flex-direction: column; gap: 8px;
         }
-        #ui label {
+        #ui div, #ui label {
             background: rgba(255,255,255,0.85);
             border: 1px solid #ddd;
             border-radius: 6px;
             padding: 6px 12px;
             font-size: 13px;
-            cursor: pointer;
             display: flex; align-items: center; gap: 8px;
         }
-        #samples {
-            background: rgba(255,255,255,0.85);
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: 12px;
-            color: #555;
-        }
+        #ui label { cursor: pointer; }
+        #samples { font-size: 12px; color: #555; }
     </style>
 </head>
 <body>
@@ -44,29 +37,20 @@
         </label>
     </div>
 
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        }
-    }
-    </script>
+    <!-- Step 1: load Three.js as a classic global script so window.THREE exists -->
+    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+    <!-- Step 2: load path tracer UMD — it will find window.THREE -->
+    <script src="https://unpkg.com/three-gpu-pathtracer@0.0.23/build/index.umd.cjs"></script>
 
-        // Load path tracer from CDN (UMD build)
-        const ptScript = await import('https://unpkg.com/three-gpu-pathtracer@0.0.23/build/index.umd.cjs');
-        const { WebGLPathTracer } = ptScript;
+    <!-- Step 3: load addons via classic scripts too (they also need global THREE) -->
+    <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
 
-        // --- Scene setup ---
+    <script>
+        const { WebGLPathTracer } = threeGpuPathtracer; // UMD global name
+
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xffffff);
-
         const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 1000);
 
         const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -77,37 +61,32 @@
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         document.body.appendChild(renderer.domElement);
 
-        // --- Path tracer ---
+        // Path tracer
         const pathTracer = new WebGLPathTracer(renderer);
         pathTracer.bounces = 5;
-        pathTracer.tiles.set(3, 3);        // render in tiles for responsiveness
-        pathTracer.fadeDuration = 300;     // fade from noisy to sharp in ms
+        pathTracer.tiles.set(3, 3);
+        pathTracer.fadeDuration = 300;
 
-        // --- Controls ---
-        const controls = new OrbitControls(camera, renderer.domElement);
+        // Controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.addEventListener('change', () => pathTracer.reset()); // reset on camera move
+        controls.addEventListener('change', () => pathTracer.reset());
 
-        // --- Lighting via environment map ---
-        // Using a simple procedural env so no HDR file needed
+        // Environment (procedural, no HDR file needed)
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
         pmremGenerator.compileEquirectangularShader();
-        const envTexture = pmremGenerator.fromScene(
-            new THREE.RoomEnvironment(), 0.04
-        ).texture;
+        const envTexture = pmremGenerator.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
         scene.environment = envTexture;
         scene.background = new THREE.Color(0xffffff);
 
-        // --- Load model ---
-        const loader = new GLTFLoader();
+        // Load model
+        const loader = new THREE.GLTFLoader();
         loader.load('model.glb', (gltf) => {
             const model = gltf.scene;
 
-            // Convert materials to physical for path tracing
             model.traverse((node) => {
                 if (node.isMesh) {
                     const old = node.material;
-                    // Upgrade to MeshPhysicalMaterial for best path tracing results
                     node.material = new THREE.MeshPhysicalMaterial({
                         color: old.color ?? new THREE.Color(0xcccccc),
                         map: old.map ?? null,
@@ -116,27 +95,25 @@
                         normalMap: old.normalMap ?? null,
                         envMapIntensity: 1.0,
                     });
-                    node.castShadow = true;
-                    node.receiveShadow = true;
                 }
             });
 
             scene.add(model);
 
-            // Auto-frame camera
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.y, size.z);
+
             camera.position.set(center.x, center.y + maxDim * 0.3, center.z + maxDim * 1.8);
             controls.target.copy(center);
             controls.update();
 
-            // Init path tracer AFTER model is in scene
+            // Must init AFTER model is in scene
             pathTracer.setScene(scene, camera);
         });
 
-        // --- UI ---
+        // UI
         const samplesEl = document.getElementById('samples');
         const pauseToggle = document.getElementById('pauseToggle');
         const bouncesSlider = document.getElementById('bounces');
@@ -148,13 +125,11 @@
             pathTracer.reset();
         });
 
-        // --- Animate ---
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
-
             if (!pauseToggle.checked) {
-                pathTracer.renderSample(); // renders one progressive sample per frame
+                pathTracer.renderSample();
                 samplesEl.textContent = `Samples: ${pathTracer.samples}`;
             }
         }
