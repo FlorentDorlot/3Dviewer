@@ -2,13 +2,25 @@
 <html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>3D Additive Blending - Fix</title>
+    <title>3D - White Background Fix</title>
     <style>
-        body { margin: 0; background: #050505; overflow: hidden; }
+        body { margin: 0; background: #ffffff; overflow: hidden; }
         canvas { width: 100vw; height: 100vh; display: block; }
+        #controls {
+            position: fixed; top: 16px; left: 16px;
+            background: rgba(0,0,0,0.08);
+            padding: 10px 16px; border-radius: 8px;
+            font-family: sans-serif; font-size: 14px;
+        }
+        label { cursor: pointer; user-select: none; }
     </style>
 </head>
 <body>
+    <div id="controls">
+        <label>
+            <input type="checkbox" id="additiveToggle"> Additive Blending
+        </label>
+    </div>
     <script type="importmap">
         {
             "imports": {
@@ -17,71 +29,74 @@
             }
         }
     </script>
-
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // 1. Scène et Rendu
         const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff); // white background in renderer
+
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
-        
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.outputColorSpace = THREE.SRGBColorSpace; // Couleurs correctes
-        renderer.toneMapping = THREE.LinearToneMapping;   // Pour l'intensité lumineuse
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.LinearToneMapping;
         document.body.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
-        // 2. Éclairage
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(5, 10, 7);
+        scene.add(dirLight);
 
-        // 3. Chargement du modèle
+        let meshes = [];
+
         const loader = new GLTFLoader();
         loader.load('model.glb', (gltf) => {
             const model = gltf.scene;
-            
+
             model.traverse((node) => {
                 if (node.isMesh) {
-                    // CONFIGURATION POUR LE SOMMAGE DES COULEURS
+                    meshes.push(node);
+                    // Normal blending works on any background
                     node.material.transparent = true;
-                    
-                    // Mode Additif : additionne les couleurs (RGB) au lieu de les superposer
-                    node.material.blending = THREE.AdditiveBlending; 
-                    
-                    // On désactive l'écriture de profondeur pour que les objets
-                    // "derrière" ne soient pas masqués par ceux de "devant"
-                    node.material.depthWrite = false; 
-                    
-                    // On garde la lecture de profondeur pour que l'objet soit 
-                    // occulté par d'éventuels objets opaques si nécessaire
+                    node.material.blending = THREE.NormalBlending;
+                    node.material.depthWrite = true;
                     node.material.depthTest = true;
-
-                    node.material.side = THREE.DoubleSide; 
-
-                    // Optionnel : Ajuster l'opacité si le cumul est trop brillant
-                    node.material.opacity = 0.7; 
+                    node.material.side = THREE.DoubleSide;
+                    node.material.opacity = 0.85;
                 }
             });
 
             scene.add(model);
-            
-            // Centrage automatique de la caméra
+
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.y, size.z);
-            
-            camera.position.set(center.x, center.y, center.z + (maxDim * 1.5));
+
+            camera.position.set(center.x, center.y, center.z + maxDim * 1.5);
             controls.target.copy(center);
         });
 
-        // 4. Animation
+        // Toggle between blending modes to compare
+        document.getElementById('additiveToggle').addEventListener('change', (e) => {
+            const isAdditive = e.target.checked;
+            // Additive needs a dark background to be visible
+            scene.background = new THREE.Color(isAdditive ? 0x111111 : 0xffffff);
+            document.body.style.background = isAdditive ? '#111111' : '#ffffff';
+
+            meshes.forEach(node => {
+                node.material.blending = isAdditive ? THREE.AdditiveBlending : THREE.NormalBlending;
+                node.material.depthWrite = !isAdditive;
+                node.material.needsUpdate = true;
+            });
+        });
+
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -89,7 +104,6 @@
         }
         animate();
 
-        // Gestion du redimensionnement
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
