@@ -39,7 +39,8 @@
         "imports": {
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
             "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-            "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.4/build/index.module.js"
+            "three-mesh-bvh": "https://esm.sh/three-mesh-bvh@0.7.4?external=three",
+            "three-gpu-pathtracer": "https://esm.sh/three-gpu-pathtracer@0.0.23?external=three,three-mesh-bvh"
         }
     }
     </script>
@@ -49,20 +50,7 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-
-        // ✅ Expose THREE globally BEFORE loading path tracer UMD
-        window.THREE = THREE;
-
-        // Dynamically load the UMD after window.THREE is set
-        await new Promise((resolve, reject) => {
-            const s = document.createElement('script');
-            s.src = 'https://unpkg.com/three-gpu-pathtracer@0.0.23/build/index.umd.cjs';
-            s.onload = resolve;
-            s.onerror = reject;
-            document.head.appendChild(s);
-        });
-
-        const { WebGLPathTracer } = window.threeGpuPathtracer;
+        import { WebGLPathTracer } from 'three-gpu-pathtracer';
 
         // --- Renderer ---
         const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -124,7 +112,6 @@
             controls.target.copy(center);
             controls.update();
 
-            // Must be called AFTER model is added to scene
             pathTracer.setScene(scene, camera);
         });
 
