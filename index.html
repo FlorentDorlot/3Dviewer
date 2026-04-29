@@ -12,7 +12,7 @@
             display: flex; flex-direction: column; gap: 8px;
         }
         #ui div, #ui label {
-            background: rgba(255,255,255,0.85);
+            background: rgba(255,255,255,0.88);
             border: 1px solid #ddd;
             border-radius: 6px;
             padding: 6px 12px;
@@ -21,9 +21,16 @@
         }
         #ui label { cursor: pointer; }
         #samples { font-size: 12px; color: #555; }
+        #loading {
+            position: fixed; inset: 0; background: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 15px; color: #666; z-index: 100;
+        }
     </style>
 </head>
 <body>
+    <div id="loading">Loading model…</div>
+
     <div id="ui">
         <div id="samples">Samples: 0</div>
         <label><input type="checkbox" id="pauseToggle"> Pause rendering</label>
@@ -34,29 +41,16 @@
         </label>
     </div>
 
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-            "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        }
-    }
-    </script>
+    <!-- Self-contained bundle: THREE + addons + path tracer, no CDN needed -->
+    <script src="pt-bundle.js"></script>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-
-        // Use skypack which handles deep re-exports correctly
-        const { WebGLPathTracer } = await import('https://cdn.skypack.dev/three-gpu-pathtracer@0.0.23?external=three');
+    <script>
+        const { THREE, GLTFLoader, OrbitControls, RoomEnvironment, WebGLPathTracer } = window.__PT__;
 
         // --- Renderer ---
         const renderer = new THREE.WebGLRenderer({ antialias: false });
         renderer.setSize(innerWidth, innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.0;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -70,7 +64,7 @@
         const pathTracer = new WebGLPathTracer(renderer);
         pathTracer.bounces = 5;
         pathTracer.tiles.set(3, 3);
-        pathTracer.fadeDuration = 300;
+        pathTracer.fadeDuration = 400;
 
         // --- Controls ---
         const controls = new OrbitControls(camera, renderer.domElement);
@@ -95,7 +89,7 @@
                         color: old.color ?? new THREE.Color(0xcccccc),
                         map: old.map ?? null,
                         roughness: old.roughness ?? 0.4,
-                        metalness: old.metalness ?? 0.0,
+                        metalness: old.metalness ?? 0.1,
                         normalMap: old.normalMap ?? null,
                         envMapIntensity: 1.0,
                     });
@@ -113,7 +107,15 @@
             controls.target.copy(center);
             controls.update();
 
+            // Must be called AFTER model is in scene
             pathTracer.setScene(scene, camera);
+
+            document.getElementById('loading').style.display = 'none';
+        },
+        undefined,
+        (err) => {
+            document.getElementById('loading').textContent = 'Error loading model.glb — check the path.';
+            console.error(err);
         });
 
         // --- UI ---
@@ -128,6 +130,7 @@
             pathTracer.reset();
         });
 
+        // --- Animate ---
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
