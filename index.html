@@ -30,7 +30,6 @@
 </head>
 <body>
     <div id="loading">Loading model…</div>
-
     <div id="ui">
         <div id="samples">Samples: 0</div>
         <label><input type="checkbox" id="pauseToggle"> Pause rendering</label>
@@ -41,13 +40,10 @@
         </label>
     </div>
 
-    <!-- Self-contained bundle: THREE + addons + path tracer, no CDN needed -->
     <script src="pt-bundle.js"></script>
-
     <script>
         const { THREE, GLTFLoader, OrbitControls, RoomEnvironment, WebGLPathTracer } = window.__PT__;
 
-        // --- Renderer ---
         const renderer = new THREE.WebGLRenderer({ antialias: false });
         renderer.setSize(innerWidth, innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -56,32 +52,32 @@
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         document.body.appendChild(renderer.domElement);
 
-        // --- Scene & Camera ---
         const scene = new THREE.Scene();
+
+        // Polyfill: three-gpu-pathtracer reads scene.environmentRotation (Three r163+)
+        if (!scene.environmentRotation) {
+            scene.environmentRotation = new THREE.Euler(0, 0, 0);
+        }
+
         const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 1000);
 
-        // --- Path tracer ---
         const pathTracer = new WebGLPathTracer(renderer);
         pathTracer.bounces = 5;
         pathTracer.tiles.set(3, 3);
         pathTracer.fadeDuration = 400;
 
-        // --- Controls ---
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.addEventListener('change', () => pathTracer.reset());
 
-        // --- Environment ---
         const pmrem = new THREE.PMREMGenerator(renderer);
         pmrem.compileEquirectangularShader();
         scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
         scene.background = new THREE.Color(0xffffff);
 
-        // --- Load model ---
         const loader = new GLTFLoader();
         loader.load('model.glb', (gltf) => {
             const model = gltf.scene;
-
             model.traverse((node) => {
                 if (node.isMesh) {
                     const old = node.material;
@@ -95,7 +91,6 @@
                     });
                 }
             });
-
             scene.add(model);
 
             const box = new THREE.Box3().setFromObject(model);
@@ -107,18 +102,15 @@
             controls.target.copy(center);
             controls.update();
 
-            // Must be called AFTER model is in scene
             pathTracer.setScene(scene, camera);
-
             document.getElementById('loading').style.display = 'none';
         },
         undefined,
         (err) => {
-            document.getElementById('loading').textContent = 'Error loading model.glb — check the path.';
+            document.getElementById('loading').textContent = 'Error loading model.glb';
             console.error(err);
         });
 
-        // --- UI ---
         const samplesEl = document.getElementById('samples');
         const pauseToggle = document.getElementById('pauseToggle');
         const bouncesSlider = document.getElementById('bounces');
@@ -130,7 +122,6 @@
             pathTracer.reset();
         });
 
-        // --- Animate ---
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
