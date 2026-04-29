@@ -7,7 +7,6 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #ffffff; overflow: hidden; font-family: sans-serif; }
         canvas { width: 100vw; height: 100vh; display: block; }
-
         #ui {
             position: fixed; top: 16px; left: 16px; z-index: 10;
             display: flex; flex-direction: column; gap: 8px;
@@ -27,9 +26,7 @@
 <body>
     <div id="ui">
         <div id="samples">Samples: 0</div>
-        <label>
-            <input type="checkbox" id="pauseToggle"> Pause rendering
-        </label>
+        <label><input type="checkbox" id="pauseToggle"> Pause rendering</label>
         <label>
             Bounces:
             <input type="range" id="bounces" min="1" max="20" value="5" style="width:80px">
@@ -37,22 +34,37 @@
         </label>
     </div>
 
-    <!-- Step 1: load Three.js as a classic global script so window.THREE exists -->
-    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.4/build/index.module.js"
+        }
+    }
+    </script>
 
-    <!-- Step 2: load path tracer UMD — it will find window.THREE -->
-    <script src="https://unpkg.com/three-gpu-pathtracer@0.0.23/build/index.umd.cjs"></script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-    <!-- Step 3: load addons via classic scripts too (they also need global THREE) -->
-    <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+        // ✅ Expose THREE globally BEFORE loading path tracer UMD
+        window.THREE = THREE;
 
-    <script>
-        const { WebGLPathTracer } = threeGpuPathtracer; // UMD global name
+        // Dynamically load the UMD after window.THREE is set
+        await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://unpkg.com/three-gpu-pathtracer@0.0.23/build/index.umd.cjs';
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+        });
 
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 1000);
+        const { WebGLPathTracer } = window.threeGpuPathtracer;
 
+        // --- Renderer ---
         const renderer = new THREE.WebGLRenderer({ antialias: false });
         renderer.setSize(innerWidth, innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
@@ -61,26 +73,29 @@
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         document.body.appendChild(renderer.domElement);
 
-        // Path tracer
+        // --- Scene & Camera ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 1000);
+
+        // --- Path tracer ---
         const pathTracer = new WebGLPathTracer(renderer);
         pathTracer.bounces = 5;
         pathTracer.tiles.set(3, 3);
         pathTracer.fadeDuration = 300;
 
-        // Controls
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        // --- Controls ---
+        const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.addEventListener('change', () => pathTracer.reset());
 
-        // Environment (procedural, no HDR file needed)
-        const pmremGenerator = new THREE.PMREMGenerator(renderer);
-        pmremGenerator.compileEquirectangularShader();
-        const envTexture = pmremGenerator.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
-        scene.environment = envTexture;
+        // --- Environment ---
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        pmrem.compileEquirectangularShader();
+        scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
         scene.background = new THREE.Color(0xffffff);
 
-        // Load model
-        const loader = new THREE.GLTFLoader();
+        // --- Load model ---
+        const loader = new GLTFLoader();
         loader.load('model.glb', (gltf) => {
             const model = gltf.scene;
 
@@ -109,22 +124,23 @@
             controls.target.copy(center);
             controls.update();
 
-            // Must init AFTER model is in scene
+            // Must be called AFTER model is added to scene
             pathTracer.setScene(scene, camera);
         });
 
-        // UI
+        // --- UI ---
         const samplesEl = document.getElementById('samples');
         const pauseToggle = document.getElementById('pauseToggle');
         const bouncesSlider = document.getElementById('bounces');
-        const bouncesVal = document.getElementById('bouncesVal');
+        const bouncesValEl = document.getElementById('bouncesVal');
 
         bouncesSlider.addEventListener('input', () => {
             pathTracer.bounces = parseInt(bouncesSlider.value);
-            bouncesVal.textContent = bouncesSlider.value;
+            bouncesValEl.textContent = bouncesSlider.value;
             pathTracer.reset();
         });
 
+        // --- Animate ---
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
