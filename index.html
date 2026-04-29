@@ -54,10 +54,12 @@
 
         const scene = new THREE.Scene();
 
-        // Polyfill: three-gpu-pathtracer reads scene.environmentRotation (Three r163+)
-        if (!scene.environmentRotation) {
-            scene.environmentRotation = new THREE.Euler(0, 0, 0);
-        }
+        // Polyfill all Scene properties added in Three r163+ that the path tracer reads
+        if (!scene.environmentRotation) scene.environmentRotation = new THREE.Euler();
+        if (!scene.backgroundRotation)  scene.backgroundRotation  = new THREE.Euler();
+        if (scene.backgroundIntensity  === undefined) scene.backgroundIntensity  = 1;
+        if (scene.environmentIntensity === undefined) scene.environmentIntensity = 1;
+        if (scene.backgroundBlurriness === undefined) scene.backgroundBlurriness = 0;
 
         const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 1000);
 
@@ -111,8 +113,8 @@
             console.error(err);
         });
 
-        const samplesEl = document.getElementById('samples');
-        const pauseToggle = document.getElementById('pauseToggle');
+        const samplesEl    = document.getElementById('samples');
+        const pauseToggle  = document.getElementById('pauseToggle');
         const bouncesSlider = document.getElementById('bounces');
         const bouncesValEl = document.getElementById('bouncesVal');
 
