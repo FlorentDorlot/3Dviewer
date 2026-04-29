@@ -2,13 +2,26 @@
 <html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>3D Viewer - Fond Blanc</title>
+    <title>3D dispersion relation viewer</title>
     <style>
-        body { margin: 0; background: #ffffff; overflow: hidden; }
+        body { margin: 0; background: #ffffff; overflow: hidden; font-family: sans-serif; }
         canvas { width: 100vw; height: 100vh; display: block; }
+        .title {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #333;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
+    <div class="title">3D dispersion relation viewer</div>
+
     <script type="importmap">
         {
             "imports": {
@@ -24,7 +37,7 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xffffff); // FOND BLANC
+        scene.background = new THREE.Color(0xffffff);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -37,8 +50,8 @@
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
-        // Lumière équilibrée pour fond blanc
-        const light = new THREE.HeispherictLight(0xffffff, 0xbbbbff, 2);
+        // Correction de la lumière (HemisphericLight)
+        const light = new THREE.HemisphericLight(0xffffff, 0x444444, 3);
         scene.add(light);
 
         const loader = new GLTFLoader();
@@ -48,24 +61,31 @@
             model.traverse((node) => {
                 if (node.isMesh) {
                     node.material.transparent = true;
-                    node.material.opacity = 0.6; // Ajustez pour voir à travers
-                    
-                    // On repasse en mélange Normal pour le fond blanc
+                    node.material.opacity = 0.7; // Opacité augmentée pour le fond blanc
                     node.material.blending = THREE.NormalBlending;
-                    
-                    // On active le tri des faces
                     node.material.depthWrite = false; 
                     node.material.side = THREE.DoubleSide;
+                    
+                    // Si le modèle a des couleurs émissives, on les booste pour le blanc
+                    if (node.material.emissive) {
+                        node.material.emissiveIntensity = 1.5;
+                    }
                 }
             });
 
             scene.add(model);
             
+            // Ajustement de la vue
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
-            camera.position.set(center.x, center.y, center.z + (Math.max(size.x, size.y) * 2));
+            const maxDim = Math.max(size.x, size.y, size.z);
+            
+            camera.position.set(center.x + maxDim, center.y + maxDim, center.z + maxDim);
             controls.target.copy(center);
+            controls.update();
+        }, undefined, (error) => {
+            console.error("Erreur de chargement :", error);
         });
 
         function animate() {
