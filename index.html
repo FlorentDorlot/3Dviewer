@@ -39,8 +39,7 @@
         "imports": {
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
             "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-            "three-mesh-bvh": "https://esm.sh/three-mesh-bvh@0.7.4?external=three",
-            "three-gpu-pathtracer": "https://esm.sh/three-gpu-pathtracer@0.0.23?external=three,three-mesh-bvh"
+            "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
     }
     </script>
@@ -50,7 +49,9 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-        import { WebGLPathTracer } from 'three-gpu-pathtracer';
+
+        // Use skypack which handles deep re-exports correctly
+        const { WebGLPathTracer } = await import('https://cdn.skypack.dev/three-gpu-pathtracer@0.0.23?external=three');
 
         // --- Renderer ---
         const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -127,7 +128,6 @@
             pathTracer.reset();
         });
 
-        // --- Animate ---
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
