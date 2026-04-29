@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>Dispersion relation viewer</title>
+    <title>3D Viewer - Fond Blanc</title>
     <style>
         body { margin: 0; background: #ffffff; overflow: hidden; }
         canvas { width: 100vw; height: 100vh; display: block; }
@@ -23,65 +23,51 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // 1. Scène et Rendu
         const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff); // FOND BLANC
+
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.outputColorSpace = THREE.SRGBColorSpace; // Couleurs correctes
-        renderer.toneMapping = THREE.LinearToneMapping;   // Pour l'intensité lumineuse
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
         document.body.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
-        // 2. Éclairage
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
+        // Lumière équilibrée pour fond blanc
+        const light = new THREE.HeispherictLight(0xffffff, 0xbbbbff, 2);
+        scene.add(light);
 
-        // 3. Chargement du modèle
         const loader = new GLTFLoader();
         loader.load('model.glb', (gltf) => {
             const model = gltf.scene;
             
             model.traverse((node) => {
                 if (node.isMesh) {
-                    // CONFIGURATION POUR LE SOMMAGE DES COULEURS
                     node.material.transparent = true;
+                    node.material.opacity = 0.6; // Ajustez pour voir à travers
                     
-                    // Mode Additif : additionne les couleurs (RGB) au lieu de les superposer
-                    node.material.blending = THREE.AdditiveBlending; 
+                    // On repasse en mélange Normal pour le fond blanc
+                    node.material.blending = THREE.NormalBlending;
                     
-                    // On désactive l'écriture de profondeur pour que les objets
-                    // "derrière" ne soient pas masqués par ceux de "devant"
+                    // On active le tri des faces
                     node.material.depthWrite = false; 
-                    
-                    // On garde la lecture de profondeur pour que l'objet soit 
-                    // occulté par d'éventuels objets opaques si nécessaire
-                    node.material.depthTest = true;
-
-                    node.material.side = THREE.DoubleSide; 
-
-                    // Optionnel : Ajuster l'opacité si le cumul est trop brillant
-                    node.material.opacity = 0.7; 
+                    node.material.side = THREE.DoubleSide;
                 }
             });
 
             scene.add(model);
             
-            // Centrage automatique de la caméra
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-            
-            camera.position.set(center.x, center.y, center.z + (maxDim * 1.5));
+            camera.position.set(center.x, center.y, center.z + (Math.max(size.x, size.y) * 2));
             controls.target.copy(center);
         });
 
-        // 4. Animation
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -89,7 +75,6 @@
         }
         animate();
 
-        // Gestion du redimensionnement
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
