@@ -2,25 +2,35 @@
 <html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>3D - White Background Fix</title>
+    <title>3D Additive Blending - White BG</title>
     <style>
-        body { margin: 0; background: #ffffff; overflow: hidden; }
-        canvas { width: 100vw; height: 100vh; display: block; }
-        #controls {
-            position: fixed; top: 16px; left: 16px;
-            background: rgba(0,0,0,0.08);
-            padding: 10px 16px; border-radius: 8px;
-            font-family: sans-serif; font-size: 14px;
+        * { margin: 0; padding: 0; }
+        body { overflow: hidden; }
+
+        /* White background layer, sits BEHIND the canvas */
+        #bg {
+            position: fixed;
+            inset: 0;
+            background: #ffffff;
+            z-index: 0;
         }
-        label { cursor: pointer; user-select: none; }
+
+        canvas {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            z-index: 1;
+            /* The renderer is transparent — additive blending works on black,
+               so we composite it over a dark layer, then invert via mix-blend-mode */
+            background: transparent;
+            mix-blend-mode: multiply; /* inverts additive effect on white bg */
+        }
     </style>
 </head>
 <body>
-    <div id="controls">
-        <label>
-            <input type="checkbox" id="additiveToggle"> Additive Blending
-        </label>
-    </div>
+    <div id="bg"></div>
     <script type="importmap">
         {
             "imports": {
@@ -35,25 +45,25 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xffffff); // white background in renderer
-
+        // No scene.background — renderer stays transparent
+        
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true,          // transparent canvas
+        });
+
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.LinearToneMapping;
+        renderer.setClearColor(0x000000, 0); // fully transparent clear
         document.body.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
-        scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        dirLight.position.set(5, 10, 7);
-        scene.add(dirLight);
-
-        let meshes = [];
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
         const loader = new GLTFLoader();
         loader.load('model.glb', (gltf) => {
@@ -61,14 +71,12 @@
 
             model.traverse((node) => {
                 if (node.isMesh) {
-                    meshes.push(node);
-                    // Normal blending works on any background
                     node.material.transparent = true;
-                    node.material.blending = THREE.NormalBlending;
-                    node.material.depthWrite = true;
+                    node.material.blending = THREE.AdditiveBlending;
+                    node.material.depthWrite = false;
                     node.material.depthTest = true;
                     node.material.side = THREE.DoubleSide;
-                    node.material.opacity = 0.85;
+                    node.material.opacity = 0.7;
                 }
             });
 
@@ -81,20 +89,6 @@
 
             camera.position.set(center.x, center.y, center.z + maxDim * 1.5);
             controls.target.copy(center);
-        });
-
-        // Toggle between blending modes to compare
-        document.getElementById('additiveToggle').addEventListener('change', (e) => {
-            const isAdditive = e.target.checked;
-            // Additive needs a dark background to be visible
-            scene.background = new THREE.Color(isAdditive ? 0x111111 : 0xffffff);
-            document.body.style.background = isAdditive ? '#111111' : '#ffffff';
-
-            meshes.forEach(node => {
-                node.material.blending = isAdditive ? THREE.AdditiveBlending : THREE.NormalBlending;
-                node.material.depthWrite = !isAdditive;
-                node.material.needsUpdate = true;
-            });
         });
 
         function animate() {
