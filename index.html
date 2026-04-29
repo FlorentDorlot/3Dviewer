@@ -66,26 +66,24 @@
             model.traverse((node) => {
                 if (!node.isMesh) return;
 
-                const isCone     = node.name.toLowerCase().startsWith('cone');
-                const isCylinder = node.name.toLowerCase().startsWith('cylinder');
+                const isArrow = node.name.startsWith('Cylinder') || node.name.startsWith('Cone');
 
-                if (isCone) {
+                if (isArrow) {
                     // ── Opaque arrows — always on top ──
                     node.material.transparent = false;
-                    node.material.blending    = THREE.NormalBlending;
-                    node.material.depthWrite  = true;
-                    node.material.depthTest   = true;
-                    node.renderOrder          = 1;
-
-                } else if (isCylinder) {
-                    // ── Additive transparent body ──
+                    node.material.blending = THREE.NormalBlending;
+                    node.material.depthWrite = true;
+                    node.material.depthTest = true;
+                    node.renderOrder = 1;
+                } else {
+                    // ── Additive transparent mesh ──
                     node.material.transparent = true;
-                    node.material.blending    = THREE.AdditiveBlending;
-                    node.material.depthWrite  = false;
-                    node.material.depthTest   = true;
-                    node.material.side        = THREE.DoubleSide;
-                    node.material.opacity     = 0.7;
-                    node.renderOrder          = 0;
+                    node.material.blending = THREE.AdditiveBlending;
+                    node.material.depthWrite = false;
+                    node.material.depthTest = true;
+                    node.material.side = THREE.DoubleSide;
+                    node.material.opacity = 0.7;
+                    node.renderOrder = 0;
                 }
 
                 node.material.needsUpdate = true;
@@ -93,10 +91,10 @@
 
             scene.add(model);
 
-            // ── Auto-frame camera ──────────────────────────────
-            const box    = new THREE.Box3().setFromObject(model);
+            // ── Auto-frame camera ──
+            const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
-            const size   = box.getSize(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.y, size.z);
 
             camera.position.set(center.x, center.y, center.z + maxDim * 1.5);
