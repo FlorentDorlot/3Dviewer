@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>3D dispersion relation viewer</title>
+    <title>3D Additive Blending - White BG</title>
     <style>
         * { margin: 0; padding: 0; }
         body { overflow: hidden; }
@@ -39,7 +39,6 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // ── Scene ──────────────────────────────────────────────
         const scene = new THREE.Scene();
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -55,10 +54,10 @@
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
-        // ── Lights ─────────────────────────────────────────────
         scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-        // ── Model ──────────────────────────────────────────────
+        const ARROWS = ['Cylinder', 'Cylinder001', 'Cylinder002'];
+
         const loader = new GLTFLoader();
         loader.load('model.glb', (gltf) => {
             const model = gltf.scene;
@@ -66,17 +65,15 @@
             model.traverse((node) => {
                 if (!node.isMesh) return;
 
-                const isArrow = node.name.startsWith('Cylinder') || node.name.startsWith('Cone');
+                const isArrow = ARROWS.includes(node.name);
 
                 if (isArrow) {
-                    // ── Opaque arrows — always on top ──
                     node.material.transparent = false;
                     node.material.blending = THREE.NormalBlending;
                     node.material.depthWrite = true;
                     node.material.depthTest = true;
                     node.renderOrder = 1;
                 } else {
-                    // ── Additive transparent mesh ──
                     node.material.transparent = true;
                     node.material.blending = THREE.AdditiveBlending;
                     node.material.depthWrite = false;
@@ -91,7 +88,6 @@
 
             scene.add(model);
 
-            // ── Auto-frame camera ──
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
@@ -102,7 +98,6 @@
             controls.update();
         });
 
-        // ── Render loop ────────────────────────────────────────
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -110,7 +105,6 @@
         }
         animate();
 
-        // ── Resize ─────────────────────────────────────────────
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
