@@ -2,106 +2,169 @@
 <html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>3D dispersion relation viewer</title>
+    <title>3D Path Tracing</title>
     <style>
-        * { margin: 0; padding: 0; }
-        body { overflow: hidden; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #ffffff; overflow: hidden; font-family: sans-serif; }
+        canvas { width: 100vw; height: 100vh; display: block; }
 
-        /* White background layer, sits BEHIND the canvas */
-        #bg {
-            position: fixed;
-            inset: 0;
-            background: #ffffff;
-            z-index: 0;
+        #ui {
+            position: fixed; top: 16px; left: 16px; z-index: 10;
+            display: flex; flex-direction: column; gap: 8px;
         }
-
-        canvas {
-            position: fixed;
-            inset: 0;
-            width: 100vw;
-            height: 100vh;
-            display: block;
-            z-index: 1;
-            /* The renderer is transparent — additive blending works on black,
-               so we composite it over a dark layer, then invert via mix-blend-mode */
-            background: transparent;
-            mix-blend-mode: multiply; /* inverts additive effect on white bg */
+        #ui label {
+            background: rgba(255,255,255,0.85);
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex; align-items: center; gap: 8px;
+        }
+        #samples {
+            background: rgba(255,255,255,0.85);
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: #555;
         }
     </style>
 </head>
 <body>
-    <div id="bg"></div>
+    <div id="ui">
+        <div id="samples">Samples: 0</div>
+        <label>
+            <input type="checkbox" id="pauseToggle"> Pause rendering
+        </label>
+        <label>
+            Bounces:
+            <input type="range" id="bounces" min="1" max="20" value="5" style="width:80px">
+            <span id="bouncesVal">5</span>
+        </label>
+    </div>
+
     <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
+    }
     </script>
+
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
+        // Load path tracer from CDN (UMD build)
+        const ptScript = await import('https://unpkg.com/three-gpu-pathtracer@0.0.23/build/index.umd.cjs');
+        const { WebGLPathTracer } = ptScript;
+
+        // --- Scene setup ---
         const scene = new THREE.Scene();
-        // No scene.background — renderer stays transparent
-        
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({
-            antialias: true,
-            alpha: true,          // transparent canvas
-        });
+        scene.background = new THREE.Color(0xffffff);
 
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 1000);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(innerWidth, innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.toneMapping = THREE.LinearToneMapping;
-        renderer.setClearColor(0x000000, 0); // fully transparent clear
         document.body.appendChild(renderer.domElement);
 
+        // --- Path tracer ---
+        const pathTracer = new WebGLPathTracer(renderer);
+        pathTracer.bounces = 5;
+        pathTracer.tiles.set(3, 3);        // render in tiles for responsiveness
+        pathTracer.fadeDuration = 300;     // fade from noisy to sharp in ms
+
+        // --- Controls ---
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
+        controls.addEventListener('change', () => pathTracer.reset()); // reset on camera move
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        // --- Lighting via environment map ---
+        // Using a simple procedural env so no HDR file needed
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        pmremGenerator.compileEquirectangularShader();
+        const envTexture = pmremGenerator.fromScene(
+            new THREE.RoomEnvironment(), 0.04
+        ).texture;
+        scene.environment = envTexture;
+        scene.background = new THREE.Color(0xffffff);
 
+        // --- Load model ---
         const loader = new GLTFLoader();
         loader.load('model.glb', (gltf) => {
             const model = gltf.scene;
 
+            // Convert materials to physical for path tracing
             model.traverse((node) => {
                 if (node.isMesh) {
-                    node.material.transparent = true;
-                    node.material.blending = THREE.AdditiveBlending;
-                    node.material.depthWrite = false;
-                    node.material.depthTest = true;
-                    node.material.side = THREE.DoubleSide;
-                    node.material.opacity = 0.7;
+                    const old = node.material;
+                    // Upgrade to MeshPhysicalMaterial for best path tracing results
+                    node.material = new THREE.MeshPhysicalMaterial({
+                        color: old.color ?? new THREE.Color(0xcccccc),
+                        map: old.map ?? null,
+                        roughness: old.roughness ?? 0.4,
+                        metalness: old.metalness ?? 0.0,
+                        normalMap: old.normalMap ?? null,
+                        envMapIntensity: 1.0,
+                    });
+                    node.castShadow = true;
+                    node.receiveShadow = true;
                 }
             });
 
             scene.add(model);
 
+            // Auto-frame camera
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.y, size.z);
-
-            camera.position.set(center.x, center.y, center.z + maxDim * 1.5);
+            camera.position.set(center.x, center.y + maxDim * 0.3, center.z + maxDim * 1.8);
             controls.target.copy(center);
+            controls.update();
+
+            // Init path tracer AFTER model is in scene
+            pathTracer.setScene(scene, camera);
         });
 
+        // --- UI ---
+        const samplesEl = document.getElementById('samples');
+        const pauseToggle = document.getElementById('pauseToggle');
+        const bouncesSlider = document.getElementById('bounces');
+        const bouncesVal = document.getElementById('bouncesVal');
+
+        bouncesSlider.addEventListener('input', () => {
+            pathTracer.bounces = parseInt(bouncesSlider.value);
+            bouncesVal.textContent = bouncesSlider.value;
+            pathTracer.reset();
+        });
+
+        // --- Animate ---
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
-            renderer.render(scene, camera);
+
+            if (!pauseToggle.checked) {
+                pathTracer.renderSample(); // renders one progressive sample per frame
+                samplesEl.textContent = `Samples: ${pathTracer.samples}`;
+            }
         }
         animate();
 
         window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.aspect = innerWidth / innerHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setSize(innerWidth, innerHeight);
+            pathTracer.reset();
         });
     </script>
 </body>
