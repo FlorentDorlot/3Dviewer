@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>3D Fix - Alpha Sorting</title>
+    <title>3D Additive Blending - Fix</title>
     <style>
-        body { margin: 0; background: #111; overflow: hidden; }
+        body { margin: 0; background: #050505; overflow: hidden; }
         canvas { width: 100vw; height: 100vh; display: block; }
     </style>
 </head>
@@ -23,45 +23,65 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+        // 1. Scène et Rendu
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
-        // Important pour les couleurs émissives
-        renderer.toneMapping = THREE.ReinhardToneMapping;
+        renderer.outputColorSpace = THREE.SRGBColorSpace; // Couleurs correctes
+        renderer.toneMapping = THREE.LinearToneMapping;   // Pour l'intensité lumineuse
         document.body.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
-        const light = new THREE.AmbientLight(0xffffff, 2); 
-        scene.add(light);
+        controls.enableDamping = true;
 
+        // 2. Éclairage
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        // 3. Chargement du modèle
         const loader = new GLTFLoader();
         loader.load('model.glb', (gltf) => {
             const model = gltf.scene;
             
             model.traverse((node) => {
                 if (node.isMesh) {
-                    // C'EST ICI QUE LA MAGIE OPÈRE :
+                    // CONFIGURATION POUR LE SOMMAGE DES COULEURS
                     node.material.transparent = true;
-                    node.material.depthWrite = true; // Force l'écriture dans le tampon de profondeur
-                    node.material.alphaTest = 0.05;  // Ignore les pixels presque invisibles
-                    node.material.side = THREE.DoubleSide; // Affiche intérieur et extérieur
                     
-                    // On ajuste le rendu pour éviter que les cônes se mangent entre eux
-                    node.renderOrder = node.id; 
+                    // Mode Additif : additionne les couleurs (RGB) au lieu de les superposer
+                    node.material.blending = THREE.AdditiveBlending; 
+                    
+                    // On désactive l'écriture de profondeur pour que les objets
+                    // "derrière" ne soient pas masqués par ceux de "devant"
+                    node.material.depthWrite = false; 
+                    
+                    // On garde la lecture de profondeur pour que l'objet soit 
+                    // occulté par d'éventuels objets opaques si nécessaire
+                    node.material.depthTest = true;
+
+                    node.material.side = THREE.DoubleSide; 
+
+                    // Optionnel : Ajuster l'opacité si le cumul est trop brillant
+                    node.material.opacity = 0.7; 
                 }
             });
 
             scene.add(model);
             
-            // Centrer la caméra
+            // Centrage automatique de la caméra
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
-            camera.position.set(center.x, center.y, center.z + 5);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            
+            camera.position.set(center.x, center.y, center.z + (maxDim * 1.5));
             controls.target.copy(center);
         });
 
+        // 4. Animation
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -69,6 +89,7 @@
         }
         animate();
 
+        // Gestion du redimensionnement
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
