@@ -2,19 +2,16 @@
 <html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>3D dispersion relation viewer</title>
+    <title>3D Additive Blending - White BG</title>
     <style>
         * { margin: 0; padding: 0; }
         body { overflow: hidden; }
-
-        /* White background layer, sits BEHIND the canvas */
         #bg {
             position: fixed;
             inset: 0;
             background: #ffffff;
             z-index: 0;
         }
-
         canvas {
             position: fixed;
             inset: 0;
@@ -22,10 +19,8 @@
             height: 100vh;
             display: block;
             z-index: 1;
-            /* The renderer is transparent — additive blending works on black,
-               so we composite it over a dark layer, then invert via mix-blend-mode */
             background: transparent;
-            mix-blend-mode: multiply; /* inverts additive effect on white bg */
+            mix-blend-mode: multiply;
         }
     </style>
 </head>
@@ -44,44 +39,66 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+        // ── Scene ──────────────────────────────────────────────
         const scene = new THREE.Scene();
-        // No scene.background — renderer stays transparent
-        
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({
-            antialias: true,
-            alpha: true,          // transparent canvas
-        });
 
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.LinearToneMapping;
-        renderer.setClearColor(0x000000, 0); // fully transparent clear
+        renderer.setClearColor(0x000000, 0);
         document.body.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
+        // ── Lights ─────────────────────────────────────────────
         scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
+        // ── Model ──────────────────────────────────────────────
         const loader = new GLTFLoader();
         loader.load('model.glb', (gltf) => {
             const model = gltf.scene;
 
             model.traverse((node) => {
-                if (node.isMesh) {
+                if (!node.isMesh) return;
+
+                // Log names so you can identify your arrow meshes
+                console.log('Mesh:', node.name, '| Color:', node.material.color);
+
+                // Detect arrows by name or by near-black material color
+                const nameMatch = node.name.toLowerCase().includes('arrow');
+                const col = node.material.color;
+                const colorMatch = col && col.r < 0.15 && col.g < 0.15 && col.b < 0.15;
+                const isArrow = nameMatch || colorMatch;
+
+                if (isArrow) {
+                    // ── Opaque arrows — always on top ──
+                    node.material.transparent = false;
+                    node.material.blending = THREE.NormalBlending;
+                    node.material.depthWrite = true;
+                    node.material.depthTest = true;
+                    node.renderOrder = 1;
+                } else {
+                    // ── Additive transparent mesh ──
                     node.material.transparent = true;
                     node.material.blending = THREE.AdditiveBlending;
                     node.material.depthWrite = false;
                     node.material.depthTest = true;
                     node.material.side = THREE.DoubleSide;
                     node.material.opacity = 0.7;
+                    node.renderOrder = 0;
                 }
+
+                node.material.needsUpdate = true;
             });
 
             scene.add(model);
 
+            // ── Auto-frame camera ──
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
@@ -89,8 +106,10 @@
 
             camera.position.set(center.x, center.y, center.z + maxDim * 1.5);
             controls.target.copy(center);
+            controls.update();
         });
 
+        // ── Render loop ────────────────────────────────────────
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -98,6 +117,7 @@
         }
         animate();
 
+        // ── Resize ────────────────────────────────────────────
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
